@@ -1,32 +1,20 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Jul 29 16:04:29 2022
-
-@author: Henrique
-"""
-#pip install pandas
-#pip install BeautifulSoup4
-
 import re
-#import time
-#import urllib
-#import requests
+import pyodbc
+import urllib
 
 import pandas as pd
 
 from bs4                            import BeautifulSoup
 from pathlib                        import Path
 from datetime                       import datetime
-#from selenium                       import webdriver
-#from bs4.element                    import CData
-#from datetime                       import datetime
+from sqlalchemy                     import create_engine
 from urllib.request                 import urlopen
 
 
 
 def get_links (url_realtor_br, pag):
     # number of pages of search result 
-    page_numbers = list(range(pag))[1:pag]
+    page_numbers = list(range(pag+1))[1:pag+1]
     # list to store all the urls of properties
     list_of_links = []
     # for loop for all search pages
@@ -97,7 +85,7 @@ def create_df (links, url_h):
         else:
             property_address_l.append('NA - property adress')
             
-        #if bsobj.find_all('div', 'listing-map'):
+        # extracting location lat and long
         loc_list = bsobj.find_all('div', 'listing-map')
         for loc in loc_list:
             loc = loc.find('noscript')
@@ -163,13 +151,13 @@ BRLR$""",'').replace('  ','')
         else:
             property_type_l.append('NA - property type')
     
-    # creating df
+    # creating dfs
     x = all_basic_feature
     mat = []
     while x != []:
         mat.append(x[:3])
         x = x[3:]
-    df_espec = pd.DataFrame(mat, columns=['quarto','banheiro','m²'])
+    df_espec = pd.DataFrame(mat, columns=['bedroom','bathroom','m²'])
     
     x = lat_long_l
     mat = []
@@ -199,9 +187,10 @@ BRLR$""",'').replace('  ','')
         x = x[1:]
     df_type = pd.DataFrame(mat, columns=['property type'])
     
+    # concat all dfs
     df = pd.concat([df_type,df_espec,df_address,df_lat_long,df_price], axis=1)
-      
-     
+
+    # create csv file with timestamp
     now = datetime.now() # current date and time (%m.%d.%Y,%H.%M.%S)
     date_time = now.strftime("%m.%d.%Y")
     name_df = 'df_houses - ' + str(date_time) + '.csv'
@@ -211,6 +200,7 @@ BRLR$""",'').replace('  ','')
     df.to_csv(filepath, index=None, header=True)
     df = pd.DataFrame(pd.read_csv(filepath))
     
+    # csv file for site not open
     if len(not_open) != 0:
         df_nt_open = pd.DataFrame(not_open, columns=['sites not open'])
         df_nt_open.to_csv("C:/Users/Henrique/repos/Untitled Folder/csv/df_sites_not _open.csv", index = None, header = True)
@@ -219,10 +209,44 @@ BRLR$""",'').replace('  ','')
 
 
 
-pages = 2
+def save_db (df):
+    while True:
+        try:
+            # connect the DB
+            server = "HENRIQUE\SQLEXPRESS01"
+            db = "Real Estate db"
+            quoted = urllib.parse.quote_plus('DRIVER={SQL Server Native Client 11.0};SERVER='+server+';DATABASE='+db+';Trusted_Connection=yes')
+            engine = create_engine('mssql+pyodbc:///?odbc_connect={}'.format(quoted))
+            
+            command = """DROP TABLE IF EXISTS real_estate_db"""
+            engine.execute(command)
+ 
+            df.to_sql('real_estate_db', con=engine, if_exists='append')
+            status = 'OK'
+            break
+        except ValueError:
+            status = 'Error to connect with DB'
+            break
+    
+    return status
+
+
+
+# timestamp start
+now = datetime.now() # current date and time (%m.%d.%Y,%H.%M.%S)
+start = now.strftime("%m.%d.%Y, %H:%M:%S")
+print("Start: ", start)
+
+# call def
+pages = input("Enter a number of pages: ")
 url = 'https://www.realtor.com/international/br/'
 home_url = 'https://www.realtor.com'
-links = get_links(url, pages)
+links = get_links(url, int(pages))
 df = create_df(links, home_url)
+status = save_db(df)
+print(status)
 
-print(">>>>>>>>>>>>>>>  You are a geeeenious. Keep going :) !!! <<<<<<<<<<<<<<<")
+# timestamp end
+now = datetime.now() # current date and time (%m.%d.%Y,%H.%M.%S)
+end = now.strftime("%m.%d.%Y, %H:%M:%S")
+print("End: ", end)
