@@ -4,7 +4,9 @@ Created on Fri Jul 29 16:04:29 2022
 
 @author: Henrique
 """
-#pip install pandas 
+#pip install pandas
+#pip install BeautifulSoup4
+
 import re
 #import time
 #import urllib
@@ -13,6 +15,8 @@ import re
 import pandas as pd
 
 from bs4                            import BeautifulSoup
+from pathlib                        import Path
+from datetime                       import datetime
 #from selenium                       import webdriver
 #from bs4.element                    import CData
 #from datetime                       import datetime
@@ -20,15 +24,15 @@ from urllib.request                 import urlopen
 
 
 
-def get_links (url_realtor, pag):
-    # number of pages of search result are 200, so we need to 
+def get_links (url_realtor_br, pag):
+    # number of pages of search result 
     page_numbers = list(range(pag))[1:pag]
     # list to store all the urls of properties
     list_of_links = []
-    # for loop for all 200 search pages
+    # for loop for all search pages
     for page in page_numbers:
         # extracting html document of search page
-        html1 = (home_url + '/p' + str(page) + '/?searchtypes=house+apartment')
+        html1 = (url_realtor_br + '/p' + str(page) + '/?searchtypes=house+apartment')
         html = urlopen(html1)
         #print(html1)
         # parsing html document to 'lxml' format
@@ -49,17 +53,13 @@ def get_links (url_realtor, pag):
     
     # removing duplicate links while maintaining the order of urls
     links = []
-    i_past = '10'
+    i_past = '00'
     for i in list_of_links: 
         if i not in links and re.findall(r'\d',str(i_past[:-2])) != re.findall(r'\d',str(i[:-2])):
             links.append(i)
-            
-            print(re.findall(r'\d',str(i_past[:-2])))
-            print(re.findall(r'\d',str(i[:-2])))
             i_past = i
-            
+                        
     return links
-
 
 
 
@@ -72,10 +72,9 @@ def create_df (links, url_h):
     lat_long_l = []
     not_open = []
     
-    
     # loop to iterate through each url
     for link in links:
-        print(link)
+        #print(link)
         # opening urls
         html1 = (home_url + link)
         while True:
@@ -85,7 +84,6 @@ def create_df (links, url_h):
             except ValueError:
                 not_open.append(html1)
                 break
-        #print(html1)
         
         # converting html document to 'lxml' format
         bsobj = BeautifulSoup(html, "lxml")
@@ -141,15 +139,17 @@ def create_df (links, url_h):
                 price = price.find('strong').text.replace("""\n            \n     
                                                           BRL R$""",'').replace("""
                                                           \n            \n            """,'').replace("""            
-                    From BRL R$""",'').replace(""" 
+                    From BRL R$""",'').replace("""
                 
-                """,'').replace("""
+                    BRL R$""",'').replace("""
                 
-                    BRL R$ 
-                
-                """,'').replace("""
-                
-                    BRL R$""",'')
+                    BRL R$""",'').replace("""
+            
+                From BRL R$""","").replace(' ','').replace("""
+            
+                BRL R$""","").replace("""
+
+BRLR$""",'').replace('  ','')
             price_l.append(price)
         else:
             price_l.append('NA - price')
@@ -158,13 +158,12 @@ def create_df (links, url_h):
         if bsobj.find_all('li','property-type'):
             property_type_list = bsobj.find_all('li','property-type')
             for property_type in property_type_list:
-                property_type = property_type.find('span').text
+                property_type = property_type.find('span').text.replace(' ','')
             property_type_l.append(property_type)
         else:
             property_type_l.append('NA - property type')
     
-    
-    
+    # creating df
     x = all_basic_feature
     mat = []
     while x != []:
@@ -201,18 +200,29 @@ def create_df (links, url_h):
     df_type = pd.DataFrame(mat, columns=['property type'])
     
     df = pd.concat([df_type,df_espec,df_address,df_lat_long,df_price], axis=1)
+      
+     
+    now = datetime.now() # current date and time (%m.%d.%Y,%H.%M.%S)
+    date_time = now.strftime("%m.%d.%Y")
+    name_df = 'df_houses - ' + str(date_time) + '.csv'
+    filepath = Path('C:/Users/Henrique/repos/Untitled Folder/csv/' + name_df)  
+    filepath.parent.mkdir(parents = True, exist_ok = True)
     
-    #excel = df.to_excel("df.xlsx")
-    #read_file = pd.read_excel ("df.xlsx")
-    df.to_csv("df_houses.csv", index=None, header=True)
-    df = pd.DataFrame(pd.read_csv("df_houses.csv"))
+    df.to_csv(filepath, index=None, header=True)
+    df = pd.DataFrame(pd.read_csv(filepath))
     
-    return None
+    if len(not_open) != 0:
+        df_nt_open = pd.DataFrame(not_open, columns=['sites not open'])
+        df_nt_open.to_csv("C:/Users/Henrique/repos/Untitled Folder/csv/df_sites_not _open.csv", index = None, header = True)
+    
+    return df
+
 
 
 pages = 2
-# home url
-home_url = 'https://www.realtor.com/international/br/'
-url = 'https://www.realtor.com'
-links = get_links(home_url, pages)
-create_df(links, url)
+url = 'https://www.realtor.com/international/br/'
+home_url = 'https://www.realtor.com'
+links = get_links(url, pages)
+df = create_df(links, home_url)
+
+print(">>>>>>>>>>>>>>>  You are a geeeenious. Keep going :) !!! <<<<<<<<<<<<<<<")
